@@ -233,5 +233,56 @@ object ZipOpTests extends TestSuite {
       assert(file2Content == "Content of file2")
     }
 
+    test("preservePosixPermissions") - prep { wd =>
+      // Create a file with specific POSIX permissions
+      val filePath = wd / "script.sh"
+      os.write(filePath, "echo 'Hello, World!'")
+      val permissions = PosixFilePermissions.fromString("rwxr-xr--")
+      Files.setPosixFilePermissions(filePath.toNIO, permissions)
+
+      // Create a ZIP archive
+      val zipFilePath = wd / "archive.zip"
+      os.zip(zipFilePath, Seq(filePath))
+
+      // Extract the ZIP archive
+      val unzippedFolder = wd / "unzipped"
+      os.unzip(zipFilePath, unzippedFolder)
+
+      // Verify the extracted file's permissions
+      val extractedFilePath = unzippedFolder / "script.sh"
+      val extractedPermissions = Files.getPosixFilePermissions(extractedFilePath.toNIO)
+
+      assert(extractedPermissions == permissions)
+    }
+
+    test("preserveSymbolicLinks") - prep { wd =>
+      // Create a target file
+      val targetFilePath = wd / "target.txt"
+      os.write(targetFilePath, "This is the target file.")
+
+      // Create a symbolic link
+      val symlinkPath = wd / "symlink.txt"
+      Files.createSymbolicLink(symlinkPath.toNIO, Paths.get("target.txt"))
+
+      // Create a ZIP archive
+      val zipFilePath = wd / "archive.zip"
+      os.zip(zipFilePath, Seq(symlinkPath, targetFilePath))
+
+      // Extract the ZIP archive
+      val unzippedFolder = wd / "unzipped"
+      os.unzip(zipFilePath, unzippedFolder)
+
+      // Verify the symbolic link
+      val extractedSymlinkPath = unzippedFolder / "symlink.txt"
+      assert(Files.isSymbolicLink(extractedSymlinkPath.toNIO))
+
+      val linkTarget = Files.readSymbolicLink(extractedSymlinkPath.toNIO)
+      assert(linkTarget.toString == "target.txt")
+
+      // Verify the target file
+      val extractedTargetPath = unzippedFolder / "target.txt"
+      assert(os.read(extractedTargetPath) == "This is the target file.")
+    }
+
   }
 }
