@@ -1,6 +1,7 @@
 package os
 
 import java.net.URI
+
 import java.nio.file.{FileSystem, FileSystems, Files, Paths}
 import java.nio.file.attribute.{
   BasicFileAttributeView,
