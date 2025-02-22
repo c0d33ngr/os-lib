@@ -5,6 +5,8 @@ import test.os.TestUtil.prep
 import utest._
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, PrintStream}
+import java.nio.file.{Files, Paths}
+import java.nio.file.attribute.PosixFilePermissions
 import java.util.zip.{ZipEntry, ZipOutputStream}
 
 object ZipOpTests extends TestSuite {
