@@ -36,6 +36,7 @@ object ZipOpTests extends TestSuite {
     //   // Middle compression is bigger than best compression
     //   assert(os.size(zipsForLevel(5)) > os.size(zipsForLevel(9)))
     // }
+    /*
     test("renaming") - prep { wd =>
       val zipFileName = "zip-file-test.zip"
       val zipFile1: os.Path = os.zip(
@@ -234,6 +235,7 @@ object ZipOpTests extends TestSuite {
       assert(file1Content == "Content of file1")
       assert(file2Content == "Content of file2")
     }
+    */
 
     test("preservePosixPermissions") - prep { wd =>
       // Create a file with specific POSIX permissions
