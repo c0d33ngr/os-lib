@@ -1,8 +1,13 @@
 package os
 
 import java.net.URI
-import java.nio.file.{FileSystem, FileSystems, Files}
-import java.nio.file.attribute.{BasicFileAttributeView, FileTime, PosixFilePermissions}
+import java.nio.file.{FileSystem, FileSystems, Files, Paths}
+import java.nio.file.attribute.{
+  BasicFileAttributeView,
+  FileTime,
+  PosixFilePermission,
+  PosixFilePermissions
+}
 import java.util.zip.{ZipEntry, ZipFile, ZipInputStream, ZipOutputStream}
 import scala.collection.JavaConverters._
 import scala.util.matching.Regex
@@ -107,6 +112,7 @@ object zip {
       }
     }
   }
+
   private def createNewZip(
       sources: Seq[ZipSource],
       excludePatterns: Seq[Regex],
@@ -133,6 +139,7 @@ object zip {
   private[os] def anyPatternsMatch(fileName: String, patterns: Seq[Regex]) = {
     patterns.exists(_.findFirstIn(fileName).isDefined)
   }
+
   private[os] def shouldInclude(
       fileName: String,
       excludePatterns: Seq[Regex],
@@ -148,30 +155,33 @@ object zip {
       sub: os.SubPath,
       preserveMtimes: Boolean,
       zipOut: ZipOutputStream
-  ) = {
-
+  ): Unit = {
     val mtimeOpt = if (preserveMtimes) Some(os.mtime(file)) else None
 
     val fis = if (os.isFile(file)) Some(os.read.inputStream(file)) else None
-    try makeZipEntry0(sub, fis, mtimeOpt, zipOut)
-    finally fis.foreach(_.close())
-  }
+    try {
+      val zipEntry = new ZipEntry(sub.toString)
 
-  private def makeZipEntry0(
-      sub: os.SubPath,
-      is: Option[java.io.InputStream],
-      preserveMtimes: Option[Long],
-      zipOut: ZipOutputStream
-  ) = {
-    val zipEntry = new ZipEntry(sub.toString)
+      // Preserve modification time
+      mtimeOpt.foreach(zipEntry.setTime)
 
-    preserveMtimes match {
-      case Some(mtime) => zipEntry.setTime(mtime)
-      case None => zipEntry.setTime(0)
+      // Preserve POSIX permissions
+      if (Files.isReadable(file.toNIO)) {
+        val permissions = Files.getPosixFilePermissions(file.toNIO)
+        zipEntry.setExtra(PosixFilePermissions.toString(permissions).getBytes)
+      }
+
+      // Handle symbolic links
+      if (Files.isSymbolicLink(file.toNIO)) {
+        val linkTarget = Files.readSymbolicLink(file.toNIO)
+        zipEntry.setExtra(linkTarget.toString.getBytes)
+      }
+
+      zipOut.putNextEntry(zipEntry)
+      fis.foreach(os.Internals.transfer(_, zipOut, close = false))
+    } finally {
+      fis.foreach(_.close())
     }
-
-    zipOut.putNextEntry(zipEntry)
-    is.foreach(os.Internals.transfer(_, zipOut, close = false))
   }
 
   /**
@@ -274,8 +284,26 @@ object unzip {
     checker.value.onWrite(dest)
     for ((zipEntry, zipInputStream) <- streamRaw(source, excludePatterns, includePatterns)) {
       val newFile = dest / os.SubPath(zipEntry.getName)
-      if (zipEntry.isDirectory) os.makeDir.all(newFile)
-      else {
+
+      if (zipEntry.isDirectory) {
+        os.makeDir.all(newFile)
+      } else {
+        // Handle symbolic links
+        if (zipEntry.getExtra != null) {
+          val extraData = new String(zipEntry.getExtra)
+          if (extraData.startsWith("/") || extraData.startsWith(".")) {
+            // This is a symbolic link
+            Files.createSymbolicLink(newFile.toNIO, Paths.get(extraData))
+            println(s"Recreated symbolic link: $newFile -> $extraData")
+          } else {
+            // This is a regular file with POSIX permissions
+            val permissions = PosixFilePermissions.fromString(extraData)
+            Files.setPosixFilePermissions(newFile.toNIO, permissions)
+            println(s"Set POSIX permissions for: $newFile")
+          }
+        }
+
+        // Write the file content
         val outputStream = os.write.outputStream(newFile, createFolders = true)
         os.Internals.transfer(zipInputStream, outputStream, close = false)
         outputStream.close()
